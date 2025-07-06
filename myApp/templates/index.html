@@ -3,42 +3,36 @@
 {% block title %}Home{% endblock %}
 
 {% block content %}
-{% load static %}
-
-<section class="recommendation-section py-5">
-  <div class="recommendation-card glass-card shadow-lg p-4 rounded">
-    <h1 class="text-center mb-4">Get Product Recommendations</h1>
-    <form action="{% url 'recommend' %}" method="POST" class="needs-validation" novalidate>
-      {% csrf_token %}
-      <div class="mb-3">
-        <label for="product" class="form-label fw-bold">Enter Product Title</label>
-        <input type="text" class="form-control form-control-lg glass-input" id="product" name="product" placeholder="e.g. Face Serum" required>
-        <div class="invalid-feedback">Please enter a title.</div>
-      </div>
-      <div class="text-center mt-4">
-        <button type="submit" class="btn btn-primary btn-lg custom-btn">Recommend</button>
-      </div>
-    </form>
-  </div>
+<section class="bg-dark text-white p-4 rounded-3 mb-5 shadow">
+  <h2 class="text-center mb-4">Product Recommendation Engine</h2>
+  <form action="{% url 'recommend' %}" method="POST" novalidate>
+    {% csrf_token %}
+    <div class="mb-3">
+      <label for="product" class="form-label">Enter a product title:</label>
+      <input type="text" class="form-control" id="product" name="product" placeholder="e.g. Vitamin C Serum" required>
+    </div>
+    <div class="text-center">
+      <button type="submit" class="btn btn-primary mt-3">🔍 Recommend</button>
+    </div>
+  </form>
 </section>
 
 {% if recommendations %}
-<section class="results-section py-5">
-  <h2 class="mb-4 text-center">Recommendations for You</h2>
-  <div class="row g-4">
-    {% for product in recommendations %}
-    <div class="col-sm-12 col-md-6 col-lg-4">
-      <div class="card h-100 border-0 shadow recommendation-card-item glass-card">
-        <div class="card-body">
-          <h5 class="card-title">{{ product.Title }}</h5>
-          <ul class="list-unstyled mt-3">
-            <li><strong>Category:</strong> {{ product.Category }}</li>
-            <li><strong>Sub-Category:</strong> {{ product.Sub_Category }}</li>
-            <li><strong>Price:</strong> ${{ product.Price }}</li>
-            <li><strong>Ratings:</strong> {{ product.Ratings }}</li>
-            <li><strong>Total Ratings:</strong> {{ product.Total_Ratings }}</li>
-          </ul>
-        </div>
+<section class="mb-5">
+  <h3 class="text-info text-center mb-4">✨ Recommended Products</h3>
+  <div class="row">
+    {% for item in recommendations %}
+    <div class="col-md-4 mb-4">
+      <div class="card h-100 p-3 shadow-sm">
+        <h5 class="card-title mb-2">{{ item.Title }}</h5>
+        <p class="mb-1">
+          <span class="price-icon">💰 ${{ item.Price }}</span>
+        </p>
+        <p class="mb-1">
+          ⭐⭐⭐⭐⭐ <span class="text-muted">({{ item.Total_Ratings|default:"0" }})</span>
+        </p>
+        <p class="small text-muted mb-0">Category: {{ item.Category }}</p>
+        <p class="small text-muted">Sub-Category: {{ item.Sub_Category }}</p>
       </div>
     </div>
     {% endfor %}

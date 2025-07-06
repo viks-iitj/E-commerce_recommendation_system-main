@@ -1,315 +1,48 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Product Recommendation System</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <style>
-        body {
-            font-family: 'Inter', sans-serif;
-            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-            min-height: 100vh;
-        }
-        
-        .hero-section {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 80px 0;
-            margin-bottom: 50px;
-            border-radius: 0 0 50px 50px;
-        }
-        
-        .search-container {
-            max-width: 600px;
-            margin: 0 auto;
-        }
-        
-        .search-form {
-            background: white;
-            border-radius: 60px;
-            padding: 8px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-        }
-        
-        .search-input {
-            border: none;
-            border-radius: 50px;
-            padding: 15px 25px;
-            font-size: 16px;
-            width: 100%;
-            background: transparent;
-        }
-        
-        .search-input:focus {
-            outline: none;
-            box-shadow: none;
-        }
-        
-        .search-btn {
-            border-radius: 50px;
-            padding: 15px 30px;
-            background: #ff6b6b;
-            border: none;
-            color: white;
-            font-weight: 600;
-            transition: all 0.3s ease;
-        }
-        
-        .search-btn:hover {
-            background: #ff5252;
-            transform: translateY(-2px);
-            box-shadow: 0 8px 20px rgba(255, 107, 107, 0.3);
-        }
-        
-        .product-card {
-            border: none;
-            border-radius: 20px;
-            box-shadow: 0 8px 25px rgba(0,0,0,0.1);
-            transition: all 0.3s ease;
-            overflow: hidden;
-            margin-bottom: 30px;
-            background: white;
-        }
-        
-        .product-card:hover {
-            transform: translateY(-10px);
-            box-shadow: 0 20px 40px rgba(0,0,0,0.2);
-        }
-        
-        .product-info {
-            padding: 25px;
-        }
-        
-        .product-title {
-            font-size: 16px;
-            font-weight: 600;
-            margin-bottom: 12px;
-            color: #333;
-            line-height: 1.4;
-            height: 44px;
-            overflow: hidden;
-        }
-        
-        .product-price {
-            font-size: 24px;
-            font-weight: bold;
-            color: #ff6b6b;
-            margin-bottom: 12px;
-        }
-        
-        .product-rating {
-            color: #ffc107;
-            margin-bottom: 15px;
-            font-size: 14px;
-        }
-        
-        .category-badge {
-            background: linear-gradient(45deg, #667eea, #764ba2);
-            color: white;
-            padding: 6px 16px;
-            border-radius: 20px;
-            font-size: 12px;
-            font-weight: 500;
-        }
-        
-        .view-btn {
-            background: linear-gradient(45deg, #667eea, #764ba2);
-            border: none;
-            color: white;
-            padding: 8px 20px;
-            border-radius: 20px;
-            font-size: 12px;
-            font-weight: 500;
-            transition: all 0.3s ease;
-        }
-        
-        .view-btn:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.3);
-        }
-        
-        .recommendations-title {
-            color: #333;
-            font-weight: 700;
-            margin-bottom: 40px;
-            position: relative;
-        }
-        
-        .recommendations-title::after {
-            content: '';
-            position: absolute;
-            bottom: -10px;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 80px;
-            height: 4px;
-            background: linear-gradient(45deg, #667eea, #764ba2);
-            border-radius: 2px;
-        }
-        
-        .loading-spinner {
-            display: none;
-            text-align: center;
-            padding: 50px;
-        }
-        
-        .fade-in {
-            animation: fadeIn 0.8s ease-in;
-        }
-        
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(20px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-        
-        @media (max-width: 768px) {
-            .hero-section {
-                padding: 50px 0;
-            }
-            
-            .search-form {
-                flex-direction: column;
-                padding: 15px;
-            }
-            
-            .search-input {
-                margin-bottom: 10px;
-            }
-            
-            .search-btn {
-                width: 100%;
-            }
-        }
-    </style>
-</head>
-<body>
-    <div class="hero-section">
-        <div class="container">
-            <div class="row justify-content-center">
-                <div class="col-lg-8">
-                    <div class="search-container">
-                        <h1 class="display-4 text-center mb-4">
-                            <i class="fas fa-search-plus me-3"></i>
-                            IITJ - Product Recommendation Engine
-                        </h1>
-                        <p class="text-center mb-4 opacity-75">Discover amazing products tailored just for you using AI-powered recommendations</p>
-                        <form method="post" class="search-form d-flex">
-                            {% csrf_token %}
-                            <input type="text" name="product_title" class="search-input flex-grow-1" 
-                                   placeholder="Enter product name (e.g., iPhone, laptop, headphones)..." required>
-                            <button class="search-btn" type="submit">
-                                <i class="fas fa-magic me-2"></i>Get Recommendations
-                            </button>
-                        </form>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
+{% extends 'base.html' %}
 
-    <div class="loading-spinner" id="loadingSpinner">
-        <div class="spinner-border text-primary" style="width: 3rem; height: 3rem;" role="status">
-            <span class="visually-hidden">Loading...</span>
-        </div>
-        <p class="mt-3 text-muted">Finding the best recommendations for you...</p>
-    </div>
+{% block title %}Home{% endblock %}
 
-    {% if recommendations %}
-    <div class="container fade-in">
-        <div class="row">
-            <div class="col-12">
-                <h2 class="text-center recommendations-title">
-                    <i class="fas fa-star me-2"></i>
-                    Recommended Products
-                </h2>
-            </div>
-        </div>
-        <div class="row">
-            {% for product in recommendations %}
-            <div class="col-lg-4 col-md-6 col-sm-12 mb-4">
-                <div class="card product-card">
-                    <div class="card-body product-info">
-                        <h5 class="product-title">{{ product.title|truncatechars:60 }}</h5>
-                        <p class="product-price">
-                            <i class="fas fa-tag me-2"></i>${{ product.price }}
-                        </p>
-                        <div class="product-rating">
-                            {% for i in "12345"|make_list %}
-                                {% if forloop.counter <= product.rating|floatformat:0 %}
-                                    <i class="fas fa-star"></i>
-                                {% else %}
-                                    <i class="far fa-star"></i>
-                                {% endif %}
-                            {% endfor %}
-                            <span class="ms-2 text-muted">({{ product.total_ratings }})</span>
-                        </div>
-                        <div class="d-flex justify-content-between align-items-center">
-                            <span class="category-badge">{{ product.category }}</span>
-                            <button class="view-btn">
-                                <i class="fas fa-eye me-1"></i>View Details
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            {% endfor %}
-        </div>
-    </div>
-    {% elif request.method == 'POST' %}
-    <div class="container">
-        <div class="row justify-content-center">
-            <div class="col-lg-6 text-center">
-                <div class="alert alert-info">
-                    <i class="fas fa-info-circle me-2"></i>
-                    No recommendations found for your search. Try a different product name!
-                </div>
-            </div>
-        </div>
-    </div>
-    {% endif %}
+{% block content %}
+{% load static %}
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
-    <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            const searchForm = document.querySelector('.search-form');
-            const searchBtn = document.querySelector('.search-btn');
-            const loadingSpinner = document.getElementById('loadingSpinner');
-            
-            if (searchForm) {
-                searchForm.addEventListener('submit', function(e) {
-                    // Show loading state
-                    searchBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Searching...';
-                    searchBtn.disabled = true;
-                    
-                    // Show loading spinner
-                    if (loadingSpinner) {
-                        loadingSpinner.style.display = 'block';
-                    }
-                    
-                    // Hide recommendations during search
-                    const recommendations = document.querySelector('.fade-in');
-                    if (recommendations) {
-                        recommendations.style.opacity = '0.5';
-                    }
-                });
-            }
-            
-            // Product card animations
-            const productCards = document.querySelectorAll('.product-card');
-            productCards.forEach((card, index) => {
-                card.style.opacity = '0';
-                card.style.transform = 'translateY(30px)';
-                
-                setTimeout(() => {
-                    card.style.transition = 'all 0.6s ease';
-                    card.style.opacity = '1';
-                    card.style.transform = 'translateY(0)';
-                }, index * 150);
-            });
-        });
-    </script>
-</body>
-</html>
+<section class="recommendation-section py-5">
+  <div class="recommendation-card glass-card shadow-lg p-4 rounded">
+    <h1 class="text-center mb-4">Get Product Recommendations</h1>
+    <form action="{% url 'recommend' %}" method="POST" class="needs-validation" novalidate>
+      {% csrf_token %}
+      <div class="mb-3">
+        <label for="product" class="form-label fw-bold">Enter Product Title</label>
+        <input type="text" class="form-control form-control-lg glass-input" id="product" name="product" placeholder="e.g. Face Serum" required>
+        <div class="invalid-feedback">Please enter a title.</div>
+      </div>
+      <div class="text-center mt-4">
+        <button type="submit" class="btn btn-primary btn-lg custom-btn">Recommend</button>
+      </div>
+    </form>
+  </div>
+</section>
+
+{% if recommendations %}
+<section class="results-section py-5">
+  <h2 class="mb-4 text-center">Recommendations for You</h2>
+  <div class="row g-4">
+    {% for product in recommendations %}
+    <div class="col-sm-12 col-md-6 col-lg-4">
+      <div class="card h-100 border-0 shadow recommendation-card-item glass-card">
+        <div class="card-body">
+          <h5 class="card-title">{{ product.Title }}</h5>
+          <ul class="list-unstyled mt-3">
+            <li><strong>Category:</strong> {{ product.Category }}</li>
+            <li><strong>Sub-Category:</strong> {{ product.Sub_Category }}</li>
+            <li><strong>Price:</strong> ${{ product.Price }}</li>
+            <li><strong>Ratings:</strong> {{ product.Ratings }}</li>
+            <li><strong>Total Ratings:</strong> {{ product.Total_Ratings }}</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+{% endblock %}

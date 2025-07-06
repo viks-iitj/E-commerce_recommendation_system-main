@@ -7,6 +7,11 @@ from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.feature_extraction.text import TfidfVectorizer
 import os
 from django.conf import settings
+import logging
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 def home(request):
     """
@@ -18,23 +23,23 @@ def home(request):
 
     if request.method == 'POST':
         product_title = request.POST.get('product_title', '').strip()
-        print(f"DEBUG: Received product_title: '{product_title}'")  # Debug print
+        logger.info(f"Received product_title: '{product_title}'")
 
         if product_title:
             search_query = product_title
             try:
-                # Get recommendations using your ML model
+                # Get recommendations using ML models
                 recommendations = get_recommendations(product_title)
-                print(f"DEBUG: Got {len(recommendations) if recommendations else 0} recommendations")  # Debug print
+                logger.info(f"Got {len(recommendations) if recommendations else 0} recommendations")
 
                 # If no recommendations found
                 if not recommendations:
                     error_message = f"No recommendations found for '{product_title}'. Please try a different product name."
-                    print("DEBUG: No recommendations found")  # Debug print
+                    logger.info("No recommendations found")
 
             except Exception as e:
                 error_message = f"Error getting recommendations: {str(e)}"
-                print(f"DEBUG: Exception occurred: {e}")  # Debug print
+                logger.error(f"Exception occurred: {e}")
 
     return render(request, 'index.html', {
         'recommendations': recommendations,
@@ -44,75 +49,247 @@ def home(request):
 
 def get_recommendations(product_title, num_recommendations=12):
     """
-    Get product recommendations based on the input product title
+    Get product recommendations using the trained ML models
     """
     try:
-        print(f"DEBUG: Starting get_recommendations for '{product_title}'")
+        logger.info(f"Starting get_recommendations for '{product_title}'")
 
-        # Load your preprocessed data and models
-        # First, check if data files exist
-        data_path = os.path.join(settings.BASE_DIR, 'myApp', 'dataset', 'data.pkl')
-        csv_path = os.path.join(settings.BASE_DIR, 'myApp', 'dataset', 'amazon_data.csv')
+        # Define paths for data and models
+        base_path = os.path.join(settings.BASE_DIR, 'myApp')
+        data_path = os.path.join(base_path, 'dataset', 'data.pkl')
+        csv_path = os.path.join(base_path, 'dataset', 'amazon_data.csv')
 
-        print(f"DEBUG: Looking for data at: {data_path}")
-        print(f"DEBUG: Looking for CSV at: {csv_path}")
+        # Model paths
+        kmeans_path = os.path.join(base_path, 'models', 'kmeans_model.joblib')
+        dbscan_path = os.path.join(base_path, 'models', 'dbscan_model.joblib')
+        preprocessor_path = os.path.join(base_path, 'models', 'preprocessor.joblib')
 
-        df = None
+        # Load data
+        df = load_data(data_path, csv_path)
+        if df is None or df.empty:
+            logger.warning("No valid data found, using sample data")
+            return create_sample_recommendations(product_title, num_recommendations)
 
-        # Try to load pickle file first
-        if os.path.exists(data_path):
-            print("DEBUG: Loading from pickle file")
-            df = pd.read_pickle(data_path)
-        # Try to load CSV file
-        elif os.path.exists(csv_path):
-            print("DEBUG: Loading from CSV file")
-            df = pd.read_csv(csv_path)
+        # Load models if they exist
+        models = load_models(kmeans_path, dbscan_path, preprocessor_path)
+
+        # Get recommendations
+        if models['kmeans'] is not None and models['preprocessor'] is not None:
+            logger.info("Using trained models for recommendations")
+            recommendations = get_ml_recommendations(df, product_title, models, num_recommendations)
         else:
-            print("DEBUG: No data files found, creating sample data")
-            df = create_sample_data()
-
-        print(f"DEBUG: DataFrame shape: {df.shape}")
-        print(f"DEBUG: DataFrame columns: {df.columns.tolist()}")
-
-        # Clean and preprocess the input
-        product_title_clean = product_title.lower().strip()
-        print(f"DEBUG: Cleaned product title: '{product_title_clean}'")
-
-        # Get recommendations using similarity
-        recommendations = get_recommendations_by_similarity(df, product_title_clean, num_recommendations)
-        print(f"DEBUG: Found {len(recommendations)} recommendations")
+            logger.info("Using similarity-based recommendations")
+            recommendations = get_similarity_recommendations(df, product_title, num_recommendations)
 
         return recommendations
 
     except Exception as e:
-        print(f"DEBUG: Error in get_recommendations: {e}")
+        logger.error(f"Error in get_recommendations: {e}")
         import traceback
         traceback.print_exc()
-        # Return sample recommendations as fallback
         return create_sample_recommendations(product_title, num_recommendations)
 
-def get_recommendations_by_similarity(df, product_title, num_recommendations=12):
+def load_data(data_path, csv_path):
+    """
+    Load data from pickle or CSV file
+    """
+    try:
+        # Try to load pickle file first
+        if os.path.exists(data_path):
+            logger.info("Loading from pickle file")
+            return pd.read_pickle(data_path)
+
+        # Try to load CSV file
+        elif os.path.exists(csv_path):
+            logger.info("Loading from CSV file")
+            df = pd.read_csv(csv_path)
+            # Save as pickle for faster loading next time
+            try:
+                df.to_pickle(data_path)
+                logger.info("Saved CSV data as pickle file")
+            except:
+                pass
+            return df
+
+        else:
+            logger.warning("No data files found")
+            return None
+
+    except Exception as e:
+        logger.error(f"Error loading data: {e}")
+        return None
+
+def load_models(kmeans_path, dbscan_path, preprocessor_path):
+    """
+    Load trained ML models
+    """
+    models = {
+        'kmeans': None,
+        'dbscan': None,
+        'preprocessor': None
+    }
+
+    try:
+        if os.path.exists(kmeans_path):
+            models['kmeans'] = joblib.load(kmeans_path)
+            logger.info("Loaded KMeans model")
+    except Exception as e:
+        logger.error(f"Error loading KMeans model: {e}")
+
+    try:
+        if os.path.exists(dbscan_path):
+            models['dbscan'] = joblib.load(dbscan_path)
+            logger.info("Loaded DBSCAN model")
+    except Exception as e:
+        logger.error(f"Error loading DBSCAN model: {e}")
+
+    try:
+        if os.path.exists(preprocessor_path):
+            models['preprocessor'] = joblib.load(preprocessor_path)
+            logger.info("Loaded preprocessor")
+    except Exception as e:
+        logger.error(f"Error loading preprocessor: {e}")
+
+    return models
+
+def get_ml_recommendations(df, product_title, models, num_recommendations):
+    """
+    Get recommendations using trained ML models
+    """
+    try:
+        # Standardize column names
+        df_clean = standardize_dataframe(df)
+
+        if df_clean.empty:
+            return get_similarity_recommendations(df, product_title, num_recommendations)
+
+        # Find the product in the dataset
+        product_title_clean = product_title.lower().strip()
+        df_clean['title_lower'] = df_clean['title'].astype(str).str.lower()
+
+        # Find similar products by title matching
+        title_matches = df_clean[df_clean['title_lower'].str.contains(product_title_clean, na=False)]
+
+        if not title_matches.empty:
+            # Use the first matching product
+            query_product = title_matches.iloc[0]
+
+            # Prepare features for the model
+            if models['preprocessor'] is not None:
+                # Create feature vector for the query product
+                features = prepare_features(query_product, df_clean.columns)
+
+                # Transform features using the preprocessor
+                query_features = models['preprocessor'].transform([features])
+
+                # Get cluster prediction
+                if models['kmeans'] is not None:
+                    cluster = models['kmeans'].predict(query_features)[0]
+                    logger.info(f"Predicted cluster: {cluster}")
+
+                    # Get all products in the same cluster
+                    df_features = df_clean.apply(lambda row: prepare_features(row, df_clean.columns), axis=1)
+                    all_features = models['preprocessor'].transform(df_features.tolist())
+                    all_clusters = models['kmeans'].predict(all_features)
+
+                    # Filter products in the same cluster
+                    cluster_products = df_clean[all_clusters == cluster].copy()
+
+                    # Calculate similarity within cluster
+                    cluster_features = all_features[all_clusters == cluster]
+                    similarities = cosine_similarity(query_features, cluster_features).flatten()
+
+                    # Get top recommendations
+                    top_indices = similarities.argsort()[-num_recommendations-1:][::-1]
+
+                    recommendations = []
+                    for idx in top_indices:
+                        if len(recommendations) >= num_recommendations:
+                            break
+
+                        if similarities[idx] > 0.1:  # Threshold for similarity
+                            product = cluster_products.iloc[idx]
+                            if product['title'].lower() != product_title.lower():  # Avoid exact match
+                                recommendation = format_recommendation(product, similarities[idx])
+                                recommendations.append(recommendation)
+
+                    return recommendations
+
+        # Fallback to similarity-based recommendations
+        return get_similarity_recommendations(df, product_title, num_recommendations)
+
+    except Exception as e:
+        logger.error(f"Error in ML recommendations: {e}")
+        return get_similarity_recommendations(df, product_title, num_recommendations)
+
+def get_similarity_recommendations(df, product_title, num_recommendations):
     """
     Get recommendations using text similarity
     """
     try:
-        print(f"DEBUG: Starting similarity calculation for '{product_title}'")
+        # Standardize dataframe
+        df_clean = standardize_dataframe(df)
 
-        # Check if DataFrame is empty
-        if df.empty:
-            print("DEBUG: DataFrame is empty")
+        if df_clean.empty:
             return create_sample_recommendations(product_title, num_recommendations)
 
-        # Map possible column names to standard names
+        # Prepare text data
+        df_clean['search_text'] = (
+                df_clean['title'].astype(str) + ' ' +
+                df_clean['category'].astype(str) + ' ' +
+                df_clean.get('subcategory', '').astype(str)
+        ).str.lower()
+
+        # Create TF-IDF vectorizer
+        vectorizer = TfidfVectorizer(
+            stop_words='english',
+            max_features=5000,
+            ngram_range=(1, 2),
+            min_df=1
+        )
+
+        # Fit and transform
+        tfidf_matrix = vectorizer.fit_transform(df_clean['search_text'])
+        query_vector = vectorizer.transform([product_title.lower()])
+
+        # Calculate similarities
+        similarities = cosine_similarity(query_vector, tfidf_matrix).flatten()
+
+        # Get top recommendations
+        top_indices = similarities.argsort()[-num_recommendations-5:][::-1]
+
+        recommendations = []
+        for idx in top_indices:
+            if len(recommendations) >= num_recommendations:
+                break
+
+            if similarities[idx] > 0.01:  # Lower threshold for more results
+                product = df_clean.iloc[idx]
+                recommendation = format_recommendation(product, similarities[idx])
+                recommendations.append(recommendation)
+
+        return recommendations
+
+    except Exception as e:
+        logger.error(f"Error in similarity recommendations: {e}")
+        return create_sample_recommendations(product_title, num_recommendations)
+
+def standardize_dataframe(df):
+    """
+    Standardize dataframe column names and clean data
+    """
+    try:
+        # Column mapping
         column_mapping = {
-            'title': ['title', 'product_title', 'name', 'product_name'],
-            'price': ['price', 'actual_price', 'discounted_price', 'cost'],
-            'rating': ['rating', 'ratings', 'average_rating', 'stars'],
-            'total_ratings': ['total_ratings', 'rating_count', 'review_count', 'reviews'],
-            'category': ['category', 'main_category', 'product_category', 'genre']
+            'title': ['title', 'product_title', 'name', 'product_name', 'Title'],
+            'price': ['price', 'actual_price', 'discounted_price', 'cost', 'Price'],
+            'rating': ['rating', 'ratings', 'average_rating', 'stars', 'Rating'],
+            'total_ratings': ['total_ratings', 'rating_count', 'review_count', 'reviews', 'Total_Ratings'],
+            'category': ['category', 'main_category', 'product_category', 'Category'],
+            'subcategory': ['subcategory', 'sub_category', 'SubCategory']
         }
 
-        # Find the actual column names in the DataFrame
+        # Find actual column names
         actual_columns = {}
         for standard_name, possible_names in column_mapping.items():
             for possible_name in possible_names:
@@ -120,156 +297,266 @@ def get_recommendations_by_similarity(df, product_title, num_recommendations=12)
                     actual_columns[standard_name] = possible_name
                     break
 
-        print(f"DEBUG: Mapped columns: {actual_columns}")
-
-        # Check if we have the essential column (title)
-        if 'title' not in actual_columns:
-            print("DEBUG: No title column found, creating sample data")
-            return create_sample_recommendations(product_title, num_recommendations)
-
-        # Create a working copy with standardized column names
-        df_work = df.copy()
+        # Create standardized dataframe
+        df_clean = df.copy()
         for standard_name, actual_name in actual_columns.items():
             if actual_name != standard_name:
-                df_work[standard_name] = df_work[actual_name]
+                df_clean[standard_name] = df_clean[actual_name]
 
-        # Clean the dataframe
-        df_clean = df_work.dropna(subset=['title']).copy()
-        df_clean['title_lower'] = df_clean['title'].astype(str).str.lower()
+        # Clean data
+        df_clean = df_clean.dropna(subset=['title']).copy()
 
-        print(f"DEBUG: Cleaned DataFrame shape: {df_clean.shape}")
+        # Clean price column
+        if 'price' in df_clean.columns:
+            df_clean['price'] = df_clean['price'].apply(clean_price)
 
-        if df_clean.empty:
-            print("DEBUG: No valid titles found")
-            return create_sample_recommendations(product_title, num_recommendations)
+        # Clean rating column
+        if 'rating' in df_clean.columns:
+            df_clean['rating'] = pd.to_numeric(df_clean['rating'], errors='coerce').fillna(4.0)
 
-        # Create TF-IDF vectorizer
-        vectorizer = TfidfVectorizer(stop_words='english', max_features=5000, lowercase=True)
+        # Clean total_ratings column
+        if 'total_ratings' in df_clean.columns:
+            df_clean['total_ratings'] = pd.to_numeric(df_clean['total_ratings'], errors='coerce').fillna(100)
 
-        # Fit and transform the titles
-        tfidf_matrix = vectorizer.fit_transform(df_clean['title_lower'])
-        print(f"DEBUG: TF-IDF matrix shape: {tfidf_matrix.shape}")
+        # Fill missing categories
+        if 'category' in df_clean.columns:
+            df_clean['category'] = df_clean['category'].fillna('General')
 
-        # Transform the input query
-        query_vector = vectorizer.transform([product_title.lower()])
-
-        # Calculate cosine similarity
-        similarity_scores = cosine_similarity(query_vector, tfidf_matrix).flatten()
-        print(f"DEBUG: Similarity scores range: {similarity_scores.min()} to {similarity_scores.max()}")
-
-        # Get top recommendations (excluding the first one if it's too similar to avoid exact duplicates)
-        top_indices = similarity_scores.argsort()[-num_recommendations-5:][::-1]
-
-        recommendations = []
-        for idx in top_indices:
-            if len(recommendations) >= num_recommendations:
-                break
-
-            if similarity_scores[idx] > 0.05:  # Lowered threshold for more results
-                product = df_clean.iloc[idx]
-                recommendation = {
-                    'title': str(product['title']),
-                    'price': format_price(product.get('price', 0)),
-                    'rating': float(product.get('rating', 4.0)),
-                    'total_ratings': int(product.get('total_ratings', 100)),
-                    'category': str(product.get('category', 'General')),
-                    'subcategory': str(product.get('subcategory', '')),
-                    'similarity_score': float(similarity_scores[idx])
-                }
-                recommendations.append(recommendation)
-                print(f"DEBUG: Added recommendation: {recommendation['title'][:50]}... (score: {similarity_scores[idx]:.4f})")
-
-        print(f"DEBUG: Total recommendations found: {len(recommendations)}")
-
-        # If still no recommendations, return sample ones
-        if not recommendations:
-            print("DEBUG: No similarity-based recommendations found, returning samples")
-            return create_sample_recommendations(product_title, num_recommendations)
-
-        return recommendations
+        return df_clean
 
     except Exception as e:
-        print(f"DEBUG: Error in similarity calculation: {e}")
-        import traceback
-        traceback.print_exc()
-        return create_sample_recommendations(product_title, num_recommendations)
+        logger.error(f"Error standardizing dataframe: {e}")
+        return pd.DataFrame()
 
-def format_price(price):
+def prepare_features(product, available_columns):
     """
-    Format price for display
+    Prepare feature vector for ML model
+    """
+    features = []
+
+    # Add numerical features
+    if 'price' in available_columns:
+        price = clean_price(product.get('price', 0))
+        features.append(float(price) if price != 'N/A' else 0.0)
+
+    if 'rating' in available_columns:
+        rating = float(product.get('rating', 4.0))
+        features.append(rating)
+
+    if 'total_ratings' in available_columns:
+        total_ratings = float(product.get('total_ratings', 100))
+        features.append(total_ratings)
+
+    # Add categorical features (you might need to encode these properly)
+    if 'category' in available_columns:
+        # Simple hash encoding for category
+        category_hash = hash(str(product.get('category', 'General'))) % 1000
+        features.append(category_hash)
+
+    return features
+
+def clean_price(price):
+    """
+    Clean and format price
     """
     try:
-        if pd.isna(price) or price == 0 or price == '':
-            return "N/A"
+        if pd.isna(price) or price == '' or price == 0:
+            return 'N/A'
 
-        # Remove currency symbols and convert to float
-        price_str = str(price).replace('$', '').replace(',', '').replace('₹', '').replace('€', '').strip()
+        # Convert to string and clean
+        price_str = str(price)
 
-        # Handle price ranges (e.g., "10-20")
+        # Remove currency symbols and extra characters
+        for symbol in ['$', '€', '£', '₹', '¥', ',']:
+            price_str = price_str.replace(symbol, '')
+
+        # Handle price ranges
         if '-' in price_str:
             price_str = price_str.split('-')[0]
 
-        price_float = float(price_str)
-        return f"{price_float:.2f}"
+        # Extract numeric value
+        import re
+        numbers = re.findall(r'\d+\.?\d*', price_str)
+
+        if numbers:
+            return float(numbers[0])
+        else:
+            return 'N/A'
+
     except:
-        return "N/A"
+        return 'N/A'
 
-def create_sample_data():
+def format_recommendation(product, similarity_score=0.0):
     """
-    Create sample data for testing when actual data file is not available
+    Format product data for recommendation display
     """
-    sample_data = {
-        'title': [
-            'Apple iPhone 13 Pro Max 128GB',
-            'Samsung Galaxy S21 Ultra 5G',
-            'Sony WH-1000XM4 Wireless Headphones',
-            'MacBook Pro 14-inch M1 Pro',
-            'Dell XPS 13 Laptop',
-            'iPad Pro 11-inch',
-            'AirPods Pro with MagSafe',
-            'Samsung 65" 4K Smart TV',
-            'PlayStation 5 Console',
-            'Xbox Series X',
-            'Nintendo Switch OLED',
-            'Apple Watch Series 7',
-            'Fitbit Versa 3',
-            'Canon EOS R5 Camera',
-            'Sony A7III Mirrorless Camera',
-            'Bose QuietComfort 35 II',
-            'JBL Charge 5 Bluetooth Speaker',
-            'Logitech MX Master 3 Mouse',
-            'Mechanical Gaming Keyboard RGB',
-            'Gaming Monitor 27-inch 4K'
-        ],
-        'price': [1099.99, 999.99, 279.99, 1999.99, 1299.99, 799.99, 179.99, 899.99, 499.99, 499.99,
-                  349.99, 399.99, 199.99, 3899.99, 1999.99, 299.99, 149.99, 99.99, 159.99, 399.99],
-        'rating': [4.5, 4.3, 4.7, 4.8, 4.4, 4.6, 4.2, 4.1, 4.9, 4.7, 4.5, 4.3, 4.0, 4.8, 4.6, 4.4, 4.2, 4.5, 4.3, 4.4],
-        'total_ratings': [15420, 8930, 12450, 5670, 7890, 9870, 18900, 3450, 25670, 18900, 12340, 11230, 6780, 1230, 2340, 8900, 4560, 7890, 3450, 5670],
-        'category': ['Electronics', 'Electronics', 'Audio', 'Computers', 'Computers', 'Electronics', 'Audio', 'Electronics', 'Gaming', 'Gaming',
-                     'Gaming', 'Wearables', 'Wearables', 'Cameras', 'Cameras', 'Audio', 'Audio', 'Accessories', 'Gaming', 'Computers']
+    return {
+        'title': str(product.get('title', 'Unknown Product')),
+        'price': clean_price(product.get('price', 0)),
+        'rating': float(product.get('rating', 4.0)),
+        'total_ratings': int(product.get('total_ratings', 100)),
+        'category': str(product.get('category', 'General')),
+        'subcategory': str(product.get('subcategory', '')),
+        'similarity_score': float(similarity_score),
+        'product_id': getattr(product, 'name', 0) if hasattr(product, 'name') else 0
     }
-
-    return pd.DataFrame(sample_data)
 
 def create_sample_recommendations(query, num_recommendations=12):
     """
-    Create sample recommendations for testing
+    Create sample recommendations when no data or models are available
     """
-    print(f"DEBUG: Creating sample recommendations for '{query}'")
+    logger.info(f"Creating sample recommendations for '{query}'")
 
+    # More realistic sample products
     sample_products = [
-        {'title': f'Related Product to {query} - Premium Model', 'price': '299.99', 'rating': 4.5, 'total_ratings': 1250, 'category': 'Electronics'},
-        {'title': f'{query} - Professional Edition', 'price': '459.99', 'rating': 4.7, 'total_ratings': 890, 'category': 'Professional'},
-        {'title': f'Best {query} Alternative', 'price': '199.99', 'rating': 4.3, 'total_ratings': 2340, 'category': 'Popular'},
-        {'title': f'{query} - Budget Friendly', 'price': '89.99', 'rating': 4.1, 'total_ratings': 567, 'category': 'Budget'},
-        {'title': f'Premium {query} with Warranty', 'price': '699.99', 'rating': 4.8, 'total_ratings': 1890, 'category': 'Premium'},
-        {'title': f'{query} - Latest Model 2024', 'price': '399.99', 'rating': 4.6, 'total_ratings': 1456, 'category': 'Latest'},
-        {'title': f'Top Rated {query}', 'price': '249.99', 'rating': 4.9, 'total_ratings': 3450, 'category': 'Top Rated'},
-        {'title': f'{query} - Bestseller', 'price': '179.99', 'rating': 4.4, 'total_ratings': 2890, 'category': 'Bestseller'},
-        {'title': f'Upgraded {query} Pro', 'price': '549.99', 'rating': 4.7, 'total_ratings': 1123, 'category': 'Pro'},
-        {'title': f'{query} - Customer Choice', 'price': '129.99', 'rating': 4.2, 'total_ratings': 2567, 'category': 'Popular'},
-        {'title': f'Advanced {query} System', 'price': '799.99', 'rating': 4.8, 'total_ratings': 890, 'category': 'Advanced'},
-        {'title': f'{query} - Special Edition', 'price': '349.99', 'rating': 4.5, 'total_ratings': 1678, 'category': 'Special'}
+        {
+            'title': f'Premium {query} - Professional Grade',
+            'price': 299.99,
+            'rating': 4.5,
+            'total_ratings': 1250,
+            'category': 'Electronics',
+            'subcategory': 'Premium',
+            'similarity_score': 0.95,
+            'product_id': 1
+        },
+        {
+            'title': f'{query} - Latest Model 2024',
+            'price': 459.99,
+            'rating': 4.7,
+            'total_ratings': 890,
+            'category': 'Electronics',
+            'subcategory': 'Latest',
+            'similarity_score': 0.92,
+            'product_id': 2
+        },
+        {
+            'title': f'Best {query} for Professionals',
+            'price': 199.99,
+            'rating': 4.3,
+            'total_ratings': 2340,
+            'category': 'Professional',
+            'subcategory': 'Pro',
+            'similarity_score': 0.88,
+            'product_id': 3
+        },
+        {
+            'title': f'{query} - Budget Friendly Option',
+            'price': 89.99,
+            'rating': 4.1,
+            'total_ratings': 567,
+            'category': 'Budget',
+            'subcategory': 'Value',
+            'similarity_score': 0.85,
+            'product_id': 4
+        },
+        {
+            'title': f'Premium {query} with Extended Warranty',
+            'price': 699.99,
+            'rating': 4.8,
+            'total_ratings': 1890,
+            'category': 'Premium',
+            'subcategory': 'Warranty',
+            'similarity_score': 0.82,
+            'product_id': 5
+        },
+        {
+            'title': f'{query} - Customer\'s Choice',
+            'price': 399.99,
+            'rating': 4.6,
+            'total_ratings': 1456,
+            'category': 'Popular',
+            'subcategory': 'Choice',
+            'similarity_score': 0.79,
+            'product_id': 6
+        },
+        {
+            'title': f'Top Rated {query} 2024',
+            'price': 249.99,
+            'rating': 4.9,
+            'total_ratings': 3450,
+            'category': 'Top Rated',
+            'subcategory': 'Bestseller',
+            'similarity_score': 0.76,
+            'product_id': 7
+        },
+        {
+            'title': f'{query} - Amazon\'s Choice',
+            'price': 179.99,
+            'rating': 4.4,
+            'total_ratings': 2890,
+            'category': 'Amazon Choice',
+            'subcategory': 'Recommended',
+            'similarity_score': 0.73,
+            'product_id': 8
+        },
+        {
+            'title': f'Upgraded {query} Pro Max',
+            'price': 549.99,
+            'rating': 4.7,
+            'total_ratings': 1123,
+            'category': 'Pro',
+            'subcategory': 'Upgraded',
+            'similarity_score': 0.70,
+            'product_id': 9
+        },
+        {
+            'title': f'{query} - Highly Recommended',
+            'price': 129.99,
+            'rating': 4.2,
+            'total_ratings': 2567,
+            'category': 'Recommended',
+            'subcategory': 'Popular',
+            'similarity_score': 0.67,
+            'product_id': 10
+        },
+        {
+            'title': f'Advanced {query} System',
+            'price': 799.99,
+            'rating': 4.8,
+            'total_ratings': 890,
+            'category': 'Advanced',
+            'subcategory': 'System',
+            'similarity_score': 0.64,
+            'product_id': 11
+        },
+        {
+            'title': f'{query} - Limited Edition',
+            'price': 349.99,
+            'rating': 4.5,
+            'total_ratings': 1678,
+            'category': 'Limited',
+            'subcategory': 'Special',
+            'similarity_score': 0.61,
+            'product_id': 12
+        }
     ]
 
     return sample_products[:num_recommendations]
+
+def product_details(request, product_id):
+    """
+    View for product details (new function)
+    """
+    try:
+        # This is a placeholder - you would fetch real product details from your data
+        product = {
+            'id': product_id,
+            'title': f'Product {product_id}',
+            'price': 299.99,
+            'rating': 4.5,
+            'total_ratings': 1250,
+            'category': 'Electronics',
+            'description': 'This is a detailed description of the product.',
+            'features': ['Feature 1', 'Feature 2', 'Feature 3'],
+            'specifications': {
+                'Brand': 'Sample Brand',
+                'Model': f'Model-{product_id}',
+                'Weight': '1.5 kg',
+                'Dimensions': '30x20x10 cm'
+            }
+        }
+
+        return JsonResponse(product)
+
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
